@@ -1,63 +1,104 @@
 package redbus
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/go-redis/redis/v7"
 )
-
+//https://github.com/grpc/grpc-go/blob/master/stream.go#L122:2
+//stream read write
 type Endpoint interface {
-	Read()
-	Write()
+	Write(data Event) error
+	Read(data *[]Event) error
 	Dettach()
+	Proble() bool
 }
 
 type EventBus interface {
 	Attach() Endpoint
-	Write()
-	Read()
 }
 
-type Event interface {
-	Type() string
-}
-type Data struct{
+
+type Event struct {
 	PID string
 }
-func (p *Data) Type() {return p.PID }
 
-type Setup struct{}
-func (p *Setup) Type() {return p.PID}
+func (p *Event) Type() string { return p.PID }
 
-type ACK struct{}
-func (p *ACK) Type() {return p.PID}
+type Hub map[string][]Endpoint
 
 type Redbus struct {
-	channels map[string][]chan Event
-	rm       sync.RWMutex
-	redis    *redis.Client
+	hubs  Hub
+	rm    sync.RWMutex
+	redis *redis.Client
+}
+func New() *Redbus{ return &Redbus{
+	hubs: make(map[string][]Endpoint),
+	rm: sync.RWMutex{},
+	redis: redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	}),
+}}
+
+func (eb *Redbus) Attach(topic string) Endpoint {
+	eb.rm.Lock()
+	ep := NewEndpoint("device")
+	if prev, found := eb.hubs[topic]; found {
+		eb.hubs[topic] = append(prev, ep)
+	} else {
+		eb.hubs[topic] = append([]Endpoint{}, ep)
+	}
+	eb.rm.Unlock()
+	return ep
 }
 
-func (eb *EventBus) publish(topic string, data interface{}) {
+func (eb *Redbus) Dispatch(topic string, data Event) {
 	eb.rm.RLock()
-	if chans, found := eb.channels[topic]; found {
-		channels := append(map[string][]chan Event{}, chans...)
-		go func(data Event, channels map[string][]chan Event) {
-			for _, ch := range channels {
-				ch <- data
+	if eps, found := eb.hubs[topic]; found {
+
+		endpoints := append([]Endpoint{}, eps...)
+		go func(data Event, endpoints []Endpoint) {
+			for _, ep := range endpoints {
+				_ = ep.Write(data)
 			}
-		}(data, channels)
+		}(data, endpoints)
 	}
 	eb.rm.RUnlock()
 }
 
-func (eb *EventBus)subscribe(topic string, ch []chan Event])  {
-	eb.rm.Lock()
-	if prev, found := eb.channels[topic]; found {
-	   eb.channels[topic] = append(prev, ch)
-	} else {
-	   eb.channels[topic] = append([]chan Event{}, ch)
+type endpoint struct {
+	Descriptor string
+	ch         chan Event
+	done       chan struct{}
+}
+
+func NewEndpoint(descriptor string)  *endpoint {
+	return &endpoint{Descriptor:descriptor,ch: make(chan Event,100),done: make(chan struct{})}
+}
+
+func (ep *endpoint) Write(e Event) (err error) {
+	//add time out control
+	ep.ch <- e
+	return nil
+}
+
+func (ep *endpoint) Read(data *[]Event) (err error) {
+	*data = append(*data,  <- ep.ch)
+	fmt.Println(data)
+	return nil
+}
+
+func (ep *endpoint) Dettach() { //	close channel on EventBus
+	ep.done <- struct{}{}
+	close(ep.ch)
+}
+
+func (ep *endpoint) Proble()bool {
+	if len(ep.done) ==0 {
+		return true
 	}
-	eb.rm.Unlock()
- }
- 
+	return false
+}
