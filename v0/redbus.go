@@ -10,19 +10,19 @@ import (
 type Endpoint interface {
 	Info() (descriptor string)
 	Receive() (e Event ,err  error)
-	Write(e Event) ( err error)
+	Send(e Event) ( err error)
 	Detach()
 	Probe() bool
 }
 
 type EventBus interface {
 	Attach() Endpoint
-	Request(topic string)
+	Send(topic string, e Event)
 }
 
 type Event interface {
 	Type() string
-	Payload() string
+	Payload() []byte
 }
 
 type Packet struct {
@@ -64,13 +64,13 @@ func (eb *Redbus) Attach(topic string) Endpoint {
 	return ep
 }
 
-func (eb *Redbus) Dispatch(topic string, data Event) {
+func (eb *Redbus) Send(topic string, data Event) {
 	eb.rm.RLock()
 	if eps, found := eb.hubs[topic]; found {
 		endpoints := append([]Endpoint{}, eps...)
 		go func(data Event, endpoints []Endpoint) {
 			for _, ep := range endpoints {
-				_  = ep.Write(data)
+				_  = ep.Send(data)
 			}
 		}(data, endpoints)
 	}
@@ -87,7 +87,7 @@ func NewEndpoint(descriptor string)  Endpoint {
 	return &endpoint{Descriptor:descriptor,ch: make(chan Event,100),done: make(chan struct{},1)}
 }
 
-func (ep *endpoint) Write(e Event) ( err error) {
+func (ep *endpoint) Send(e Event) ( err error) {
 	//add time out control
 	ep.ch <- e
 	return nil
