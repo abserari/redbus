@@ -2,13 +2,23 @@ package main
 
 import (
 	"fmt"
-	"time"
+	eventbus "github.com/yhyddr/redbus/v0"
 )
 
 func main() {
-	x := make(chan struct{},1)
-	fmt.Println(len(x))
-	x <- struct{}{}
-	fmt.Println(len(x))
-	time.Sleep(time.Second)
+	eb := eventbus.New()
+
+	ep := eb.Attach("keyboard")
+
+	fmt.Println(ep.Descriptor(),ep.Probe())
+
+	p := eventbus.NewPong()
+	eb.Send("keyboard",p)
+
+	e, err := ep.Receive()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	fmt.Println(e.Type(),e.Payload())
 }

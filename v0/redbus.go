@@ -1,11 +1,10 @@
-package redbus
+package eventbus
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/go-redis/redis/v7"
 )
 //https://github.com/grpc/grpc-go/blob/master/stream.go#L122:2
 //stream read write
@@ -27,36 +26,34 @@ type Event interface {
 	Payload() []byte
 }
 
-type Packet struct {
+type Pong struct {
 	pID string
 	payload []byte
 }
 
-func (p Packet) Type() string { return p.pID }
+func NewPong() Pong { return Pong{pID: "pong",payload: []byte("pong")}}
+func (p Pong) Type() string { return p.pID }
 
-func (p Packet) Payload() []byte {return p.payload}
+func (p Pong) Payload() []byte {return p.payload}
 
 type Redbus struct {
 	epcount int
-	eps map[string]map[int]chan Packet
+	eps map[string]map[int]chan Event
 	rm    sync.RWMutex
-	redis *redis.Client
 }
 
 func New() *Redbus{ return &Redbus{
 	epcount: 0,
-	eps: make(map[string]map[int]chan Packet),
+	eps: make(map[string]map[int]chan Event),
 	rm: sync.RWMutex{},
-	redis: redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	}),
 }}
 
 func (eb *Redbus) Attach(topic string) Endpoint {
 	eb.rm.Lock()
 	ep := eb.Newendpoint(topic + " "+ strconv.Itoa(eb.epcount))
+	if _, found := eb.eps[topic]; !found {
+		eb.eps[topic] = make(map[int]chan Event)
+	}
 	eb.eps[topic][eb.epcount] =  ep.ch
 	eb.epcount ++
 	eb.rm.Unlock()
@@ -66,9 +63,9 @@ func (eb *Redbus) Attach(topic string) Endpoint {
 func (eb *Redbus) Send(topic string, data Event) {
 	eb.rm.RLock()
 	if eps, found := eb.eps[topic]; found {
-		go func(data Event, eps map[int]chan Packet ) {
+		go func(data Event, eps map[int]chan Event ) {
 			for _, ep := range eps {
-				ep <- data.(Packet)
+				ep <- data.(Event)
 			}
 		}(data, eps)
 	}
@@ -78,11 +75,11 @@ func (eb *Redbus) Send(topic string, data Event) {
 type endpoint struct {
 	eb Redbus
 	descriptor string
-	ch         chan Packet
+	ch         chan Event
 }
 
 func (eb *Redbus)Newendpoint(descriptor string)  *endpoint {
-	return &endpoint{eb: *eb,descriptor:descriptor,ch: make(chan Packet,100)}
+	return &endpoint{eb: *eb,descriptor:descriptor,ch: make(chan Event,100)}
 }
 
 func (ep *endpoint) Send(topic string, e Event) ( err error) {
@@ -93,13 +90,18 @@ func (ep *endpoint) Send(topic string, e Event) ( err error) {
 
 // a block method until receive a event from the eventbus
 func (ep *endpoint) Receive()(data Event, err error) {
-	return <- ep.ch, nil
+	data, haddata := <- ep.ch
+	if !haddata {
+		return data,errors.New("channel no data and closed")
+	}
+	return data ,nil
 }
 
 func (ep *endpoint) Detach() { //	close channel on EventBus
 	desc := strings.Split(ep.descriptor," ")
 	epcount,_ := strconv.Atoi(desc[1])
 	delete(ep.eb.eps[desc[0]],epcount)
+	close(ep.ch)
 }
 
 func (ep *endpoint) Probe()bool {

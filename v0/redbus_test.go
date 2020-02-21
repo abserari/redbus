@@ -1,4 +1,4 @@
-package redbus_test
+package eventbus_test
 
 import (
 	"fmt"
@@ -7,14 +7,28 @@ import (
 )
 
 func TestRedbus(t *testing.T) {
-	b := redbus.New()
+	eb := eventbus.New()
 
-	ep:= b.Attach("room")
+	ep := eb.Attach("keyboard")
 
-	var ev redbus.Event
-	go ep.Read(ev)
+	fmt.Println(ep.Descriptor())
+	fmt.Println(ep.Probe())
 
-	b.Dispatch("room",&redbus.Data{PID:"Hello World"})
-	for(ev == nil)  {}
-	fmt.Println(ev.Type())
+	p := eventbus.NewPong()
+	eb.Send("keyboard",p)
+
+	e, err := ep.Receive()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	fmt.Println(e.Type(),e.Payload())
+
+	ep.Detach()
+
+	fmt.Println(ep.Probe())
+
+	e, err = ep.Receive()
+
+	fmt.Println(e,err)
 }
