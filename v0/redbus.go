@@ -1,6 +1,8 @@
 package redbus
 
 import (
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/go-redis/redis/v7"
@@ -8,9 +10,9 @@ import (
 //https://github.com/grpc/grpc-go/blob/master/stream.go#L122:2
 //stream read write
 type Endpoint interface {
-	Info() (descriptor string)
-	Receive() (e Event ,err  error)
-	Send(e Event) ( err error)
+	Descriptor()  string
+	Receive() (Event , error)
+	//Send(e Event) error
 	Detach()
 	Probe() bool
 }
@@ -27,23 +29,23 @@ type Event interface {
 
 type Packet struct {
 	pID string
-	payload string
+	payload []byte
 }
 
-func (p *Packet) Type() string { return p.pID }
+func (p Packet) Type() string { return p.pID }
 
-func (p *Packet) Payload() string {return p.payload}
-
-type Hub map[string][]Endpoint
+func (p Packet) Payload() []byte {return p.payload}
 
 type Redbus struct {
-	hubs  Hub
+	epcount int
+	eps map[string]map[int]chan Packet
 	rm    sync.RWMutex
 	redis *redis.Client
 }
 
 func New() *Redbus{ return &Redbus{
-	hubs: make(map[string][]Endpoint),
+	epcount: 0,
+	eps: make(map[string]map[int]chan Packet),
 	rm: sync.RWMutex{},
 	redis: redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
@@ -54,42 +56,38 @@ func New() *Redbus{ return &Redbus{
 
 func (eb *Redbus) Attach(topic string) Endpoint {
 	eb.rm.Lock()
-	ep := NewEndpoint("device")
-	if prev, found := eb.hubs[topic]; found {
-		eb.hubs[topic] = append(prev, ep)
-	} else {
-		eb.hubs[topic] = append([]Endpoint{}, ep)
-	}
+	ep := eb.Newendpoint(topic + " "+ strconv.Itoa(eb.epcount))
+	eb.eps[topic][eb.epcount] =  ep.ch
+	eb.epcount ++
 	eb.rm.Unlock()
 	return ep
 }
 
 func (eb *Redbus) Send(topic string, data Event) {
 	eb.rm.RLock()
-	if eps, found := eb.hubs[topic]; found {
-		endpoints := append([]Endpoint{}, eps...)
-		go func(data Event, endpoints []Endpoint) {
-			for _, ep := range endpoints {
-				_  = ep.Send(data)
+	if eps, found := eb.eps[topic]; found {
+		go func(data Event, eps map[int]chan Packet ) {
+			for _, ep := range eps {
+				ep <- data.(Packet)
 			}
-		}(data, endpoints)
+		}(data, eps)
 	}
 	eb.rm.RUnlock()
 }
 
 type endpoint struct {
-	Descriptor string
-	ch         chan Event
-	done       chan struct{}
+	eb Redbus
+	descriptor string
+	ch         chan Packet
 }
 
-func NewEndpoint(descriptor string)  Endpoint {
-	return &endpoint{Descriptor:descriptor,ch: make(chan Event,100),done: make(chan struct{},1)}
+func (eb *Redbus)Newendpoint(descriptor string)  *endpoint {
+	return &endpoint{eb: *eb,descriptor:descriptor,ch: make(chan Packet,100)}
 }
 
-func (ep *endpoint) Send(e Event) ( err error) {
+func (ep *endpoint) Send(topic string, e Event) ( err error) {
 	//add time out control
-	ep.ch <- e
+	ep.eb.Send(topic,e)
 	return nil
 }
 
@@ -99,15 +97,18 @@ func (ep *endpoint) Receive()(data Event, err error) {
 }
 
 func (ep *endpoint) Detach() { //	close channel on EventBus
-	ep.done <- struct{}{}
-	close(ep.ch)
+	desc := strings.Split(ep.descriptor," ")
+	epcount,_ := strconv.Atoi(desc[1])
+	delete(ep.eb.eps[desc[0]],epcount)
 }
 
 func (ep *endpoint) Probe()bool {
-	if len(ep.done) ==0 {
-		return true
+	desc := strings.Split(ep.descriptor," ")
+	epcount,_ := strconv.Atoi(desc[1])
+	if _,found := ep.eb.eps[desc[0]][epcount]; !found {
+		return false
 	}
-	return false
+	return true
 }
 
-func(ep *endpoint) Info() string{ return ep.Descriptor}
+func(ep *endpoint) Descriptor() string { return ep.descriptor}
