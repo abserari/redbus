@@ -2,18 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/yhyddr/redbus/v0"
+	"time"
 )
 
 func main() {
-	b := redbus.New()
-
-	ep := b.Attach("room")
-
-	var ev []redbus.Event
-	b.Dispatch("room", redbus.Event{PID: "Hello World"})
-	ep.Read(&ev)
-
-	fmt.Println(ev)
-	fmt.Println(ev[0].Type())
+	x := make(chan struct{},1)
+	fmt.Println(len(x))
+	x <- struct{}{}
+	fmt.Println(len(x))
+	time.Sleep(time.Second)
 }
