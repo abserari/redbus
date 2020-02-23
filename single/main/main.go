@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	eventbus "github.com/yhyddr/redbus/v0"
+	eventbus "github.com/yhyddr/redbus/single"
 )
 
 func main() {

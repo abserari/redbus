@@ -11,13 +11,12 @@ import (
 type Endpoint interface {
 	Descriptor()  string
 	Receive() (Event , error)
-	//Send(e Event) error
 	Detach()
 	Probe() bool
 }
 
 type EventBus interface {
-	Attach() Endpoint
+	Attach(topic string) Endpoint
 	Send(topic string, e Event)
 }
 
@@ -30,10 +29,8 @@ type Pong struct {
 	pID string
 	payload []byte
 }
-
 func NewPong() Pong { return Pong{pID: "pong",payload: []byte("pong")}}
 func (p Pong) Type() string { return p.pID }
-
 func (p Pong) Payload() []byte {return p.payload}
 
 type Redbus struct {

@@ -2,7 +2,7 @@ package eventbus_test
 
 import (
 	"fmt"
-	"github.com/yhyddr/redbus/v0"
+	"github.com/yhyddr/redbus/single"
 	"testing"
 )
 
