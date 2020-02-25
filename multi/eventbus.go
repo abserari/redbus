@@ -7,7 +7,7 @@ type Endpoint interface {
 	Probe() bool
 }
 
-type EventBus interface {
+type LocalEventBus interface {
 	Attach() Endpoint
 	Send(topic string, e Event)
 }
