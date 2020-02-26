@@ -15,10 +15,10 @@ type Endpoint interface {
 	Probe() bool
 }
 
-type EventBus interface {
-	Attach(topic string) Endpoint
-	Send(topic string, e Event)
-}
+//type EventBus interface {
+//	Attach(topic string) Endpoint
+//	Send(topic string, e Event)
+//}
 
 type Event interface {
 	Type() string
@@ -33,19 +33,19 @@ func NewPong() Pong { return Pong{pID: "pong",payload: []byte("pong")}}
 func (p Pong) Type() string { return p.pID }
 func (p Pong) Payload() []byte {return p.payload}
 
-type Redbus struct {
+type EventBus struct {
 	epcount int
 	eps map[string]map[int]chan Event
 	rm    sync.RWMutex
 }
 
-func New() *Redbus{ return &Redbus{
+func New() *EventBus{ return &EventBus{
 	epcount: 0,
 	eps: make(map[string]map[int]chan Event),
 	rm: sync.RWMutex{},
 }}
 
-func (eb *Redbus) Attach(topic string) Endpoint {
+func (eb *EventBus) Attach(topic string) Endpoint {
 	eb.rm.Lock()
 	ep := eb.Newendpoint(topic + " "+ strconv.Itoa(eb.epcount))
 	if _, found := eb.eps[topic]; !found {
@@ -57,7 +57,7 @@ func (eb *Redbus) Attach(topic string) Endpoint {
 	return ep
 }
 
-func (eb *Redbus) Send(topic string, data Event) {
+func (eb *EventBus) Send(topic string, data Event) {
 	eb.rm.RLock()
 	if eps, found := eb.eps[topic]; found {
 		go func(data Event, eps map[int]chan Event ) {
@@ -70,12 +70,12 @@ func (eb *Redbus) Send(topic string, data Event) {
 }
 
 type endpoint struct {
-	eb Redbus
+	eb EventBus
 	descriptor string
 	ch         chan Event
 }
 
-func (eb *Redbus)Newendpoint(descriptor string)  *endpoint {
+func (eb *EventBus)Newendpoint(descriptor string)  *endpoint {
 	return &endpoint{eb: *eb,descriptor:descriptor,ch: make(chan Event,100)}
 }
 
