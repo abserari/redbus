@@ -2,6 +2,7 @@ package eventbus
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -213,12 +214,15 @@ func (ep *endpoint) Receive() (data Event, err error) {
 	// default:
 	// 	// handle error
 	// }
+	if len(args) < 2 {
+		return nil, errors.New("error event received")
+	}
 	data = Pong{pID: args[0], payload: []byte(args[1])}
 	return data, nil
 }
 
 func (ep *endpoint) Detach() { //	close channel on EventBus
-	ep.conn.Write([]byte("/exit " + ep.Descriptor()))
+	ep.conn.Write([]byte("/exit " + ep.Descriptor() + " \n"))
 	ep.conn.Close()
 }
 
