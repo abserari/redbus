@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	var file  = "test.sock"
+	var file = "test.sock"
 start:
 	lis, err := net.Listen("unix", file)
 	if err != nil {
@@ -41,8 +41,8 @@ func handle(conn net.Conn) {
 
 	reader := bufio.NewReader(conn)
 
+	msg, err := reader.ReadString('\n')
 	for {
-		msg, err := reader.ReadString('\n')
 		if err == io.EOF { //当对端退出后会报这么一个错误
 			fmt.Println("go : 对端已接 收全部数据")
 			break
