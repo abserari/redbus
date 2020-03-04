@@ -45,7 +45,7 @@ type Pong struct {
 }
 
 // NewPong -
-func NewPong() Pong { return Pong{pID: "pong", payload: []byte("pong")} }
+func NewPong() Pong { return Pong{uid: "asdf", pID: "pong", payload: []byte("pong")} }
 
 // ID -
 func (p Pong) ID() string { return p.uid }
@@ -139,7 +139,7 @@ func (eb *EventBus) handle(conn net.Conn) {
 		case "/pub":
 			{
 				//pub msg to target topic
-				eb.Send(args[1], Pong{pID: "data", payload: []byte(args[2])})
+				eb.Send(args[1], Pong{uid: "asdf", pID: "data", payload: []byte(args[2])})
 			}
 		case "/exit":
 			{
@@ -248,7 +248,7 @@ func (ep *endpoint) Receive() (data Event, err error) {
 	// 	// handle error
 	// }
 
-	data = Pong{pID: args[0], payload: []byte(args[1])}
+	data = Pong{uid: "asdf", pID: args[0], payload: []byte(args[1])}
 	return data, nil
 }
 
