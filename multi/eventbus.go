@@ -15,6 +15,8 @@ import (
 
 //https://github.com/grpc/grpc-go/blob/master/stream.go#L122:2
 //stream read write
+
+// Endpoint use for receive and send events
 type Endpoint interface {
 	Descriptor() string
 	Receive() (Event, error)
@@ -23,54 +25,83 @@ type Endpoint interface {
 	Probe() bool
 }
 
-//type EventBus interface {
-//	Attach(topic string) Endpoint
-//	Send(topic string, e Event)
-//}
+// Bus use to get endpoint and send events to other endpoint
+type Bus interface {
+	Attach(topic string) Endpoint
+	Send(topic string, e Event)
+}
 
+// Event is a interface which realize yourself event to dispatch
 type Event interface {
+	ID() string
 	Type() string
 	Payload() []byte
 }
 
+// Pong -
 type Pong struct {
+	uid     string
 	pID     string
 	payload []byte
 }
 
-func NewPong() Pong            { return Pong{pID: "pong", payload: []byte("pong")} }
-func (p Pong) Type() string    { return p.pID }
+// NewPong -
+func NewPong() Pong { return Pong{pID: "pong", payload: []byte("pong")} }
+
+// ID -
+func (p Pong) ID() string { return p.uid }
+
+// Type -
+func (p Pong) Type() string { return p.pID }
+
+// Payload -
 func (p Pong) Payload() []byte { return p.payload }
 
+// EventBus realize bus to dispatch events.
 type EventBus struct {
 	epcount int
 	eps     map[string]map[int]net.Conn
 	rm      sync.RWMutex
 
+	// use absolute path like /etc/redbus/bus.sock
 	filepath string
 }
 
+// New -
+func New() *EventBus {
+	return &EventBus{
+		epcount:  0,
+		eps:      make(map[string]map[int]net.Conn),
+		rm:       sync.RWMutex{},
+		filepath: "test.sock",
+	}
+}
+
+// Serve - multiEventbus serve at once to communicate events.
 func (eb *EventBus) Serve() {
 start:
 	lis, err := net.Listen("unix", eb.filepath)
 	if err != nil {
-		log.Println("UNIX Domain Socket 创 建失败，正在尝试重新创建 -> ", err)
+		log.Println("UNIX Domain Socket failed to listen:", err)
 		err = os.Remove(eb.filepath)
 		if err != nil {
-			log.Fatalln("删除 sock 文件失败！程序退出 -> ", err)
+			log.Fatalln("Faild to remove unix domain socket file:", err)
 		}
 		goto start
 	} else {
-		fmt.Println("创建 UNIX Domain Socket 成功")
+		fmt.Println("Listening on", eb.filepath)
 	}
 	defer lis.Close()
 
 	for {
+		// listen conn
 		conn, err := lis.Accept()
 		if err != nil {
 			log.Println(err)
 			continue
 		}
+
+		// eb get conn.
 		go eb.handle(conn)
 	}
 }
@@ -81,11 +112,11 @@ func (eb *EventBus) handle(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 	for {
 		msg, err := reader.ReadString('\n')
-		if err == io.EOF { //当对端退出后会报这么一个错误
-			fmt.Println("对端已退出")
+		if err == io.EOF { // read over
+			fmt.Println("client exit with io.EOF")
 			//remove eb.eps.conn
 			break
-		} else if err != nil { //处理完客户端关闭的错误正常错误还是要处理的
+		} else if err != nil { // other err
 			log.Println(err)
 			break
 		}
@@ -121,15 +152,7 @@ func (eb *EventBus) handle(conn net.Conn) {
 	}
 }
 
-func New() *EventBus {
-	return &EventBus{
-		epcount:  0,
-		eps:      make(map[string]map[int]net.Conn),
-		rm:       sync.RWMutex{},
-		filepath: "test.sock",
-	}
-}
-
+// Attach get a endpoint to receive related topic's events.
 func (eb *EventBus) Attach(topic string) Endpoint {
 	eb.rm.Lock()
 	conn, err := net.Dial("unix", eb.filepath)
@@ -163,6 +186,7 @@ func (eb *EventBus) Attach(topic string) Endpoint {
 	return nil
 }
 
+// Send is eb's method to send message to target topic with data.
 func (eb *EventBus) Send(topic string, data Event) {
 	eb.rm.RLock()
 	log.Println("send " + topic + " " + data.Type())
@@ -178,6 +202,7 @@ func (eb *EventBus) Send(topic string, data Event) {
 	eb.rm.RUnlock()
 }
 
+// endpoint -
 type endpoint struct {
 	conn       net.Conn
 	rd         *bufio.Reader
@@ -185,6 +210,7 @@ type endpoint struct {
 	ch         chan Event
 }
 
+// Newendpoint return a ep. use by eb attach.
 func (eb *EventBus) Newendpoint(descriptor string, conn net.Conn) *endpoint {
 	return &endpoint{conn: conn, rd: bufio.NewReader(conn), descriptor: descriptor, ch: make(chan Event, 100)}
 }
