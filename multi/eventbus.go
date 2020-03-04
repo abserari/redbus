@@ -145,7 +145,8 @@ func (eb *EventBus) handle(conn net.Conn) {
 			{
 				i, _ := strconv.Atoi(args[1])
 				delete(eb.eps[args[1]], i)
-				eb.epcount--
+				// should find other way to distinguish ep like a map[int]bool
+				// eb.epcount--
 				log.Println("delete", i, eb.epcount)
 			}
 		default:
