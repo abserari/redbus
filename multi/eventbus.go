@@ -22,7 +22,6 @@ type Endpoint interface {
 	Receive() (Event, error)
 	Send(topic string, payload Event) error
 	Detach()
-	Probe() bool
 }
 
 // Bus use to get endpoint and send events to other endpoint
@@ -126,18 +125,21 @@ func (eb *EventBus) handle(conn net.Conn) {
 		switch args[0] {
 		case "/attach":
 			{
-				//attach the conn
+				//attach the conn, return number which to desc endpoint self
 				conn.Write([]byte("/number " + strconv.Itoa(eb.epcount) + " \n"))
+
+				// ensure have not nil map
 				if _, found := eb.eps[args[1]]; !found {
 					eb.eps[args[1]] = make(map[int]net.Conn)
 				}
 				eb.eps[args[1]][eb.epcount] = conn
+				// flag to distinguish endpoint to one topic
 				eb.epcount++
 			}
 		case "/pub":
 			{
+				//pub msg to target topic
 				eb.Send(args[1], Pong{pID: "data", payload: []byte(args[2])})
-				//pub msg to conn
 			}
 		case "/exit":
 			{
@@ -229,7 +231,12 @@ func (ep *endpoint) Send(topic string, e Event) (err error) {
 func (ep *endpoint) Receive() (data Event, err error) {
 	msg, err := ep.rd.ReadString('\n')
 	log.Print("receive", msg)
+
 	args := strings.Split(msg, " ")
+	if len(args) < 2 {
+		return nil, errors.New("error event received")
+	}
+	// todo: according to message type to return
 	// switch iface.(type) {
 	// case *redis.Subscription:
 	// 	// subscribe succeeded
@@ -240,9 +247,7 @@ func (ep *endpoint) Receive() (data Event, err error) {
 	// default:
 	// 	// handle error
 	// }
-	if len(args) < 2 {
-		return nil, errors.New("error event received")
-	}
+
 	data = Pong{pID: args[0], payload: []byte(args[1])}
 	return data, nil
 }
@@ -250,21 +255,6 @@ func (ep *endpoint) Receive() (data Event, err error) {
 func (ep *endpoint) Detach() { //	close channel on EventBus
 	ep.conn.Write([]byte("/exit " + ep.Descriptor() + " \n"))
 	ep.conn.Close()
-}
-
-func (ep *endpoint) Probe() bool {
-	ep.conn.Write([]byte("/ping " + ep.Descriptor()))
-	reader := bufio.NewReader(ep.conn)
-	msg, err := reader.ReadString('\n')
-	if err != nil {
-		log.Println(err)
-		return false
-	}
-	args := strings.Split(msg, " ")
-	if args[0] == "/pong" {
-		return true
-	}
-	return false
 }
 
 func (ep *endpoint) Descriptor() string { return ep.descriptor }
